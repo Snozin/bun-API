@@ -1,10 +1,44 @@
 // console.log("Hello via Bun!");
+import type { AIService, ChatMessage } from './types'
+import { groqService } from './services/groq'
+import { cerebrasService } from './services/cerebras'
+
+const services: AIService[] = [groqService, cerebrasService]
+let currentServiceIndex = 0
+
+function getNextService() {
+  const service = services[currentServiceIndex]
+  currentServiceIndex = (currentServiceIndex + 1) % services.length
+  return service
+}
+
 const server = Bun.serve({
   port: process.env.PORT || 3000,
   async fetch(req) {
-    return new Response('Bun API funcionando OK')
+    // return new Response('Bun API funcionando OK')
+    const { pathname } = new URL(req.url)
+    if (req.method === 'POST' && pathname === '/chat') {
+      const { messages } = await req.json() as { messages: ChatMessage[] };
+      const service = getNextService();
+
+      console.log(`Using ${service?.name} service`);
+
+      const stream = await service?.chat(messages);
+
+      return new Response(stream, {
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+        },
+      })
+    }
+
+    return new Response('Not found', { status: 404 })
   },
 })
 
-// console.log(`Server running on ${server.url}:${server.port}`)
 console.log(`Server running on ${server.url}`)
+
+
+// curl -X POST http://localhost:3000/chat \-H "Content-Type: application/json" \ -d'{ "messages": [{"role":"user","content":"Cuentame un chiste gracioso"}]}'
